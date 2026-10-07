@@ -161,6 +161,7 @@ pub fn make_decoder(params: &CodecParameters) -> Result<Box<dyn Decoder>> {
         codec_id,
         inner: CinepakDecoder::new(),
         pending: None,
+        last_output: None,
         eof: false,
     }))
 }
@@ -169,6 +170,9 @@ struct CinepakDecoderHandle {
     codec_id: CodecId,
     inner: CinepakDecoder,
     pending: Option<Packet>,
+    /// The size and layout of the frame `receive_frame` last returned
+    /// (frames are decoded there, so none is known before it).
+    last_output: Option<(u32, u32, PixelFormat)>,
     eof: bool,
 }
 
@@ -196,7 +200,16 @@ impl Decoder for CinepakDecoderHandle {
             };
         };
         let frame = self.inner.decode_frame(&pkt.data, pkt.pts)?;
+        self.last_output = Some((frame.width, frame.height, frame.pixel_format.into()));
         Ok(Frame::Video(frame.into()))
+    }
+
+    fn output_video_dimensions(&self) -> Option<(u32, u32)> {
+        self.last_output.map(|(w, h, _)| (w, h))
+    }
+
+    fn output_pixel_format(&self) -> Option<PixelFormat> {
+        self.last_output.map(|(_, _, format)| format)
     }
 
     fn flush(&mut self) -> Result<()> {
@@ -207,6 +220,7 @@ impl Decoder for CinepakDecoderHandle {
     fn reset(&mut self) -> Result<()> {
         self.inner.reset();
         self.pending = None;
+        self.last_output = None;
         self.eof = false;
         Ok(())
     }

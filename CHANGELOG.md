@@ -6,6 +6,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The registry decoder implements `Decoder::output_video_dimensions` /
+  `output_pixel_format`: the size and layout (`Rgb24` / `Gray8`) of the
+  frame `receive_frame` last returned.
+
 ### Changed
 
 - Round 430 (encoder-performance depth round, step 3 — nearest-neighbour

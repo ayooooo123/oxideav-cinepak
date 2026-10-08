@@ -43,6 +43,10 @@ pub mod codebook;
 pub mod decoder;
 pub mod encoder;
 pub mod error;
+/// FFmpeg's Cinepak decoder (LGPL-2.1-or-later, see the file's notice):
+/// what the registry decodes with.
+#[cfg(feature = "registry")]
+pub mod ffdec;
 pub mod film;
 pub mod header;
 pub mod image;

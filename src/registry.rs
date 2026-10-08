@@ -14,8 +14,8 @@ use oxideav_core::{
     Error, Frame, Packet, PixelFormat, ProbeContext, Result, RuntimeContext, VideoFrame,
 };
 
-use crate::decoder::CinepakDecoder;
 use crate::error::CinepakError;
+use crate::ffdec::{FfCinepak, FfError};
 use crate::header::{FRAME_HEADER_SIZE, STRIP_HEADER_SIZE, STRIP_ID_INTER, STRIP_ID_INTRA};
 use crate::image::{CinepakFrame, CinepakPixelFormat, CinepakPlane};
 use crate::CODEC_ID_STR;
@@ -155,28 +155,35 @@ oxideav_core::register!("cinepak", register);
 
 // ---- Decoder trait impl ------------------------------------------------
 
+/// The registered decoder: FFmpeg's (`crate::ffdec`, LGPL), at the
+/// container's picture size (FFmpeg's `avctx` size), or the first frame
+/// header's when the container gives none.
 pub fn make_decoder(params: &CodecParameters) -> Result<Box<dyn Decoder>> {
-    let codec_id = params.codec_id.clone();
-    Ok(Box::new(CinepakDecoderHandle {
-        codec_id,
-        inner: CinepakDecoder::new(),
+    let size = params
+        .width
+        .zip(params.height)
+        .filter(|&(w, h)| w > 0 && h > 0);
+    Ok(Box::new(FfCinepakHandle {
+        codec_id: params.codec_id.clone(),
+        size: size.map(|(w, h)| (w as usize, h as usize)),
+        inner: None,
         pending: None,
-        last_output: None,
+        decoded: false,
         eof: false,
     }))
 }
 
-struct CinepakDecoderHandle {
+struct FfCinepakHandle {
     codec_id: CodecId,
-    inner: CinepakDecoder,
+    size: Option<(usize, usize)>,
+    inner: Option<FfCinepak>,
     pending: Option<Packet>,
-    /// The size and layout of the frame `receive_frame` last returned
-    /// (frames are decoded there, so none is known before it).
-    last_output: Option<(u32, u32, PixelFormat)>,
+    /// A frame has been returned: its size and layout are reported.
+    decoded: bool,
     eof: bool,
 }
 
-impl Decoder for CinepakDecoderHandle {
+impl Decoder for FfCinepakHandle {
     fn codec_id(&self) -> &CodecId {
         &self.codec_id
     }
@@ -193,23 +200,55 @@ impl Decoder for CinepakDecoderHandle {
 
     fn receive_frame(&mut self) -> Result<Frame> {
         let Some(pkt) = self.pending.take() else {
-            return if self.eof {
-                Err(Error::Eof)
+            return Err(if self.eof {
+                Error::Eof
             } else {
-                Err(Error::NeedMore)
-            };
+                Error::NeedMore
+            });
         };
-        let frame = self.inner.decode_frame(&pkt.data, pkt.pts)?;
-        self.last_output = Some((frame.width, frame.height, frame.pixel_format.into()));
-        Ok(Frame::Video(frame.into()))
+        if self.inner.is_none() {
+            // FFmpeg takes the size from the container; a frame header
+            // (width and height at bytes 4..8) stands in when it has none.
+            let size = match (self.size, pkt.data.get(4..8)) {
+                (Some(size), _) => size,
+                (None, Some(h)) => (
+                    usize::from(u16::from_be_bytes([h[0], h[1]])),
+                    usize::from(u16::from_be_bytes([h[2], h[3]])),
+                ),
+                (None, None) => return Err(Error::invalid("Cinepak: picture size unknown")),
+            };
+            if size.0 == 0 || size.1 == 0 || size.0 > 16_384 || size.1 > 16_384 {
+                return Err(Error::invalid("Cinepak: picture size out of range"));
+            }
+            self.inner = Some(FfCinepak::new(size.0, size.1));
+        }
+        let dec = self.inner.as_mut().expect("decoder initialised above");
+        match dec.decode(&pkt.data) {
+            Ok(true) => {
+                self.decoded = true;
+                let (w, _) = dec.size();
+                Ok(Frame::Video(VideoFrame {
+                    pts: pkt.pts,
+                    planes: vec![VideoPlane {
+                        stride: w * 3,
+                        data: dec.picture(),
+                    }],
+                }))
+            }
+            // An empty frame: FFmpeg returns nothing for it.
+            Ok(false) => Err(Error::NeedMore),
+            Err(FfError::InvalidData(why)) => Err(Error::invalid(why)),
+            Err(FfError::Unsupported(why)) => Err(Error::unsupported(why)),
+        }
     }
 
     fn output_video_dimensions(&self) -> Option<(u32, u32)> {
-        self.last_output.map(|(w, h, _)| (w, h))
+        let (w, h) = self.inner.as_ref().filter(|_| self.decoded)?.size();
+        Some((w as u32, h as u32))
     }
 
     fn output_pixel_format(&self) -> Option<PixelFormat> {
-        self.last_output.map(|(_, _, format)| format)
+        self.decoded.then_some(PixelFormat::Rgb24)
     }
 
     fn flush(&mut self) -> Result<()> {
@@ -217,10 +256,14 @@ impl Decoder for CinepakDecoderHandle {
         Ok(())
     }
 
+    /// A fresh decoder: a seek starts from a black picture and empty
+    /// codebooks, as a reopened FFmpeg decoder does.
     fn reset(&mut self) -> Result<()> {
-        self.inner.reset();
+        if let Some(dec) = &self.inner {
+            let (w, h) = dec.size();
+            self.inner = Some(FfCinepak::new(w, h));
+        }
         self.pending = None;
-        self.last_output = None;
         self.eof = false;
         Ok(())
     }

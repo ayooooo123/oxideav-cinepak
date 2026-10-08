@@ -6,6 +6,23 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The registry decoder is FFmpeg's, ported** (PearTube fork; `src/ffdec.rs`,
+  FFmpeg 2da55bf `libavcodec/cinepak.c`, LGPL-2.1-or-later; the crate is now
+  `MIT AND LGPL-2.1-or-later`). `registry::make_decoder` returns it: RGB24 at
+  the container's picture size (FFmpeg's `avctx` size, not the coded size in
+  the frame header: 400×187, not 400×188), one picture buffer for the stream
+  (skipped blocks keep the previous frame), codebooks kept per strip index
+  across frames, a frame that fails part-way returned as far as it decoded,
+  an empty frame returning nothing, and Sega FILM's extra header bytes. Gray
+  Cinepak decodes as R = G = B, as FFmpeg's does. Frame-exact with FFmpeg on
+  FATE `cvid/pcitva15.avi` (152 frames) and an FFmpeg encode; on
+  `laracroft-cinepak-partial.avi` every frame the AVI reader delivers (78 of
+  FFmpeg's 79: the 79th is a chunk cut by the end of the file). The
+  clean-room `CinepakDecoder` API is unchanged. Not reproduced: FFmpeg's
+  palette mode for 8-bit Cinepak, which the stream parameters cannot select.
+
 ### Added
 
 - The registry decoder implements `Decoder::output_video_dimensions` /

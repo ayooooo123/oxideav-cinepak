@@ -268,6 +268,14 @@ impl FfCinepak {
         if s.x2 > self.aligned_width || s.y2 > self.aligned_height || s.x1 >= s.x2 || s.y1 >= s.y2 {
             return Err(FfError::InvalidData("cinepak: strip outside the picture"));
         }
+        // Vectors write whole four-pixel rows from x1. Checking x2 alone
+        // misses a last block crossing the padded row from an unaligned x1.
+        let block_width = (s.x2 - s.x1 + 3) & !3;
+        if block_width > self.aligned_width - s.x1 {
+            return Err(FfError::InvalidData(
+                "cinepak: block outside the picture row",
+            ));
+        }
         let mut d = 0;
         while d + 4 <= data.len() {
             let chunk_id = data[d];
@@ -390,15 +398,8 @@ impl FfCinepak {
 mod tests {
     use super::*;
 
-    /// One 4×4 key frame: a V1 codebook entry (Y 10/20/30/40, U 0, V 0)
-    /// drawn by one vector: each codebook pixel fills a 2×2 square.
-    #[test]
-    fn a_v1_block_doubles_each_pixel() {
+    fn frame(chunks: &[&[u8]]) -> Vec<u8> {
         let mut f = vec![0x00, 0x00, 0x00, 0x00, 0x00, 4, 0x00, 4, 0x00, 1];
-        let chunks = [
-            &[0x22u8, 0, 0, 10, 10, 20, 30, 40, 0, 0][..],
-            &[0x32, 0, 0, 5, 0][..],
-        ];
         let strip_len = 12 + chunks.iter().map(|c| c.len()).sum::<usize>();
         f.extend_from_slice(&[0x10, 0, 0, strip_len as u8, 0, 0, 0, 0, 0, 4, 0, 4]);
         for c in chunks {
@@ -406,6 +407,18 @@ mod tests {
         }
         let len = f.len();
         f[3] = len as u8;
+        f
+    }
+
+    fn v1_frame() -> Vec<u8> {
+        frame(&[&[0x22, 0, 0, 10, 10, 20, 30, 40, 0, 0], &[0x32, 0, 0, 5, 0]])
+    }
+
+    /// One 4×4 key frame: a V1 codebook entry (Y 10/20/30/40, U 0, V 0)
+    /// drawn by one vector: each codebook pixel fills a 2×2 square.
+    #[test]
+    fn a_v1_block_doubles_each_pixel() {
+        let f = v1_frame();
         let mut dec = FfCinepak::new(4, 4);
         assert_eq!(dec.decode(&f), Ok(true));
         let p = dec.picture();
@@ -420,5 +433,106 @@ mod tests {
                 vec![30, 30, 40, 40]
             )
         );
+    }
+
+    #[test]
+    fn unaligned_strip_block_cannot_cross_the_picture_row() {
+        let mut f = v1_frame();
+        // x1=1, x2=4 fits the 4-pixel picture, but a whole block at x=1
+        // would write a fifth pixel and run past the 48-byte frame.
+        f[17] = 1;
+        let mut dec = FfCinepak::new(4, 4);
+        // A damaged strip keeps the existing picture, as FFmpeg does.
+        assert_eq!(dec.decode(&f), Ok(true));
+        assert_eq!(dec.picture(), vec![0; 4 * 4 * 3]);
+    }
+
+    #[test]
+    fn strip_edge_mutations_preserve_pixels_and_row_padding() {
+        for (w, h) in [
+            (1usize, 1usize),
+            (3, 3),
+            (4, 1),
+            (4, 4),
+            (4, 5),
+            (5, 3),
+            (7, 5),
+            (8, 8),
+            (9, 7),
+        ] {
+            let (aw, ah) = ((w + 3) & !3, (h + 3) & !3);
+            let mut xs = vec![0, 1, 3, 4, w, aw - 1, aw, aw + 1, u16::MAX as usize];
+            xs.sort_unstable();
+            xs.dedup();
+            let mut ys = vec![
+                (0, h),
+                (0, ah),
+                (1, ah),
+                (h - 1, h),
+                (h, h + 1),
+                (ah, ah),
+                (ah, ah + 1),
+                (1, 0),
+                (0, u16::MAX as usize),
+                (u16::MAX as usize, ah),
+            ];
+            ys.sort_unstable();
+            ys.dedup();
+            for v4 in [false, true] {
+                let codebook = [if v4 { 0x20 } else { 0x22 }, 0, 0, 10, 37, 37, 37, 37, 0, 0];
+                // Nine blocks cover every small picture, including any
+                // legal nonaligned origin. V4 flags select four vectors.
+                let mut vectors = if v4 {
+                    vec![0x30, 0, 0, 44, 0xff, 0xff, 0xff, 0xff]
+                } else {
+                    vec![0x32, 0, 0, 13]
+                };
+                vectors.resize(if v4 { 44 } else { 13 }, 0);
+                let mut f = frame(&[&codebook, &vectors]);
+                f[4..6].copy_from_slice(&(w as u16).to_be_bytes());
+                f[6..8].copy_from_slice(&(h as u16).to_be_bytes());
+                f[18..20].copy_from_slice(&(ah as u16).to_be_bytes());
+                f[20..22].copy_from_slice(&(aw as u16).to_be_bytes());
+                let mut base = f.clone();
+                base[26..30].fill(0xa5);
+                let mut dec = FfCinepak::new(w, h);
+                for &x1 in &xs {
+                    for &x2 in &xs {
+                        for &(y1, y2) in &ys {
+                            assert_eq!(dec.decode(&base), Ok(true));
+                            for (at, value) in [(14, y1), (16, x1), (18, y2), (20, x2)] {
+                                f[at..at + 2].copy_from_slice(&(value as u16).to_be_bytes());
+                            }
+                            let mut expected = vec![0xa5; w * h * 3];
+                            if x1 < x2
+                                && x2 <= aw
+                                && y1 < y2
+                                && y2 <= ah
+                                && (x1..x2).step_by(4).all(|x| x + 4 <= aw)
+                            {
+                                // Accepted blocks paint only their visible
+                                // pixels; invalid strips retain the base.
+                                for y in (y1..y2).step_by(4) {
+                                    for x in (x1..x2).step_by(4) {
+                                        for py in y..(y + 4).min(h) {
+                                            for px in x..(x + 4).min(w) {
+                                                let at = (py * w + px) * 3;
+                                                expected[at..at + 3].fill(37);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            assert_eq!(dec.decode(&f), Ok(true));
+                            assert_eq!(
+                                dec.picture(),
+                                expected,
+                                "{w}x{h}, V4={v4}, strip=({x1},{y1})..({x2},{y2})"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }

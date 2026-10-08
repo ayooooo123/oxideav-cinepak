@@ -6,6 +6,16 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed (PearTube fork)
+
+- Validate the full four-pixel block extent of a strip from its left edge
+  against the padded RGB row width before decoding it. A 4×4 picture with
+  `x1=1, x2=4` used to pass the strip check and write past its 48-byte
+  buffer. Invalid strips now retain the previous pixels under the existing
+  partial-frame policy. Short edge blocks that fit the row padding and
+  partial bottom rows still decode. Tests cover the 48-byte regression and
+  V1/V4 strip-edge mutations on small, odd-sized and padded pictures.
+
 ### Changed
 
 - **The registry decoder is FFmpeg's, ported** (PearTube fork; `src/ffdec.rs`,

@@ -24,8 +24,8 @@
 #![allow(clippy::needless_range_loop)]
 
 use oxideav_cinepak::{
-    encode_gray8, encode_gray8_best_rd_grid, encode_gray8_round7, CinepakDecoder,
-    CinepakPixelFormat, EncoderOptions,
+    CinepakDecoder, CinepakPixelFormat, EncoderOptions, encode_gray8, encode_gray8_best_rd_grid,
+    encode_gray8_round7,
 };
 
 /// Smooth two-axis grayscale gradient (favours more strips so each
@@ -214,11 +214,7 @@ fn pure_distortion_ranking_picks_high_psnr() {
     let mut best_fixed = f64::NEG_INFINITY;
     for &sc in &strips {
         for &lam in &lambdas {
-            let o = EncoderOptions {
-                strip_count: sc,
-                rdo_lambda: lam,
-                ..opts
-            };
+            let o = opts.with_strip_count(sc).with_rdo_lambda(lam);
             let b = encode_gray8(&src, w as u32, h as u32, o).unwrap();
             best_fixed = best_fixed.max(psnr(&src, &decode_gray(&b, w, h)));
         }

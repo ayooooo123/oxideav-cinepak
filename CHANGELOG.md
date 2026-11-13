@@ -6,6 +6,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `#[non_exhaustive]`: the enums `CinepakError`, `CinepakVariant`, `FilmAudioFormat`, `CinepakPixelFormat` and `LintSeverity`; the records `EncoderOptions`, `DeviantConfig`, `EncodedFrame`, `FrameStats`, `RateStats`, `RateControlledFrame` and `LintIssue`. Code outside the crate builds `EncoderOptions` / `DeviantConfig` through their constructors and `with_*` setters and needs a `_ =>` arm when matching the enums. `SampleKind`, `PcmSignConvention` and `PcmEndianness` (closed by the FILM format) stay exhaustive.
+- `#[doc(hidden)]`: the bitstream-syntax modules `codebook`, `header`, `vector` and `yuv` and their crate-root re-exports (still `pub` for tests / fuzz / examples).
+
+### Added
+
+- `EncoderOptions::with_*` and `DeviantConfig::with_*` setters for every field (start from `Default` / `from_quality`, or `DeviantConfig::saturn` / `lemmings_3do`).
+
 ### Fixed (PearTube fork)
 
 - Validate the full four-pixel block extent of a strip from its left edge
@@ -38,6 +47,25 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The registry decoder implements `Decoder::output_video_dimensions` /
   `output_pixel_format`: the size and layout (`Rgb24` / `Gray8`) of the
   frame `receive_frame` last returned.
+
+## [0.0.4](https://github.com/OxideAV/oxideav-cinepak/compare/v0.0.3...v0.0.4) - 2026-10-23
+
+### Other
+
+- edition 2024, MSRV 1.95
+- record round-430 bounded fuzz pass (zero crashes, four targets)
+- round-430 profile ledger — cumulative -23..-31% encode, decode re-verified
+- i32 k-means++ D2-seeding pass with fused sigma-d2 refresh
+- cache median-cut split selection, single-sweep cluster extents
+- flat-accumulator Lloyd loops (seeded + k-means++ polish), in-place update
+- LBG pass restructure — 2 nearest scans per pass, flat accumulators
+- restructure nearest-neighbour scan (i32, mode-split, size-gated early exit)
+- criterion training-phase toggle rows + 640x480 3-strip row
+- round-430 golden wire-byte pins for the encoder (15-scenario matrix)
+
+### Changed
+
+- edition 2024, MSRV 1.95.
 
 ### Changed
 

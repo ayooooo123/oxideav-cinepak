@@ -9,15 +9,15 @@
 //! identity).
 
 use crate::codebook::{
-    apply_codebook_chunk_with, Codebook, CodebookChunkKind, PixelMode, UpdateStyle, WhichCodebook,
-    CHUNK_HEADER_SIZE,
+    CHUNK_HEADER_SIZE, Codebook, CodebookChunkKind, PixelMode, UpdateStyle, WhichCodebook,
+    apply_codebook_chunk_with,
 };
 use crate::error::{CinepakError, Result};
 use crate::header::{
-    FrameHeader, RawStripHeader, StripHeader, FRAME_HEADER_SIZE, STRIP_HEADER_SIZE,
+    FRAME_HEADER_SIZE, FrameHeader, RawStripHeader, STRIP_HEADER_SIZE, StripHeader,
 };
 use crate::image::{CinepakFrame, CinepakPixelFormat, CinepakPlane};
-use crate::vector::{decode_vector_chunk, Mb};
+use crate::vector::{Mb, decode_vector_chunk};
 use crate::yuv::yuv_to_rgb;
 
 /// Wire-level deviation profile for a Cinepak frame.
@@ -50,6 +50,7 @@ use crate::yuv::yuv_to_rgb;
 /// `'cvid'` data in Sega Saturn `.cpk` files even though early Sega CD
 /// titles also use these deviations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DeviantConfig {
     /// Number of extra bytes between the standard 10-byte frame
     /// header and the first strip header (2 for Saturn / Sega CD,
@@ -62,6 +63,26 @@ pub struct DeviantConfig {
     /// the decoder must skip (i.e. non-divisible payload sizes are
     /// legal). Saturn variant is `true`.
     pub tolerate_codebook_pad: bool,
+}
+
+impl DeviantConfig {
+    /// Set `extra_header_bytes`.
+    pub fn with_extra_header_bytes(mut self, extra_header_bytes: u8) -> Self {
+        self.extra_header_bytes = extra_header_bytes;
+        self
+    }
+
+    /// Set `frame_length_short_by`.
+    pub fn with_frame_length_short_by(mut self, frame_length_short_by: u8) -> Self {
+        self.frame_length_short_by = frame_length_short_by;
+        self
+    }
+
+    /// Set `tolerate_codebook_pad`.
+    pub fn with_tolerate_codebook_pad(mut self, tolerate_codebook_pad: bool) -> Self {
+        self.tolerate_codebook_pad = tolerate_codebook_pad;
+        self
+    }
 }
 
 impl DeviantConfig {
@@ -197,10 +218,10 @@ impl CinepakDecoder {
 
         // If the previous frame is the wrong size for this frame, drop
         // it — skip macroblocks must reference the *same* frame layout.
-        if let Some(p) = &self.prev_frame {
-            if p.width != width || p.height != height {
-                self.prev_frame = None;
-            }
+        if let Some(p) = &self.prev_frame
+            && (p.width != width || p.height != height)
+        {
+            self.prev_frame = None;
         }
 
         // Take the carry-over codebooks out of `self` to avoid the
@@ -257,7 +278,7 @@ impl CinepakDecoder {
                     strip_hdr.actual_y_top, strip_hdr.actual_y_bottom
                 )));
             }
-            if (sx1 - sx0) % 4 != 0 || strip_hdr.height() % 4 != 0 {
+            if (sx1 - sx0) % 4 != 0 || !strip_hdr.height().is_multiple_of(4) {
                 return Err(CinepakError::invalid(format!(
                     "strip {strip_index} dims ({}x{}) not multiples of 4",
                     sx1 - sx0,

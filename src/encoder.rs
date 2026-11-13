@@ -77,18 +77,18 @@
 #![allow(clippy::needless_range_loop)]
 
 use crate::codebook::{
-    encode_full_chunk, encode_header_only_chunk, encode_selective_chunk, Codebook,
-    CodebookChunkKind, CodebookEntry, PixelMode, UpdateStyle, WhichCodebook, CHUNK_HEADER_SIZE,
+    CHUNK_HEADER_SIZE, Codebook, CodebookChunkKind, CodebookEntry, PixelMode, UpdateStyle,
+    WhichCodebook, encode_full_chunk, encode_header_only_chunk, encode_selective_chunk,
 };
 use crate::error::{CinepakError, Result};
 use crate::header::{
-    FrameHeader, RawStripHeader, FRAME_HEADER_SIZE, STRIP_HEADER_SIZE, STRIP_ID_INTER,
+    FRAME_HEADER_SIZE, FrameHeader, RawStripHeader, STRIP_HEADER_SIZE, STRIP_ID_INTER,
     STRIP_ID_INTRA,
 };
 use crate::image::{CinepakFrame, CinepakPixelFormat};
 use crate::vector::{
-    encode_inter_payload, encode_mixed_intra_payload, encode_v1_only_payload, Mb,
-    VECTOR_CHUNK_INTER, VECTOR_CHUNK_INTRA, VECTOR_CHUNK_V1_ONLY,
+    Mb, VECTOR_CHUNK_INTER, VECTOR_CHUNK_INTRA, VECTOR_CHUNK_V1_ONLY, encode_inter_payload,
+    encode_mixed_intra_payload, encode_v1_only_payload,
 };
 
 /// Encoder configuration.
@@ -107,6 +107,7 @@ use crate::vector::{
 /// derives all three from a single `quality ∈ 0..=100` PSNR-style
 /// knob (see method docs for the mapping).
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct EncoderOptions {
     /// Number of V4 codebook entries (1..=256). Default `64`.
     pub v4_entries: u16,
@@ -366,6 +367,92 @@ pub struct EncoderOptions {
     ///
     /// Default `false`. Set to `true` for vintage-player target output.
     pub vintage_compat: bool,
+}
+
+impl EncoderOptions {
+    /// Set `v4_entries`.
+    pub fn with_v4_entries(mut self, v4_entries: u16) -> Self {
+        self.v4_entries = v4_entries;
+        self
+    }
+
+    /// Set `v1_entries`.
+    pub fn with_v1_entries(mut self, v1_entries: u16) -> Self {
+        self.v1_entries = v1_entries;
+        self
+    }
+
+    /// Set `strip_count`.
+    pub fn with_strip_count(mut self, strip_count: u16) -> Self {
+        self.strip_count = strip_count;
+        self
+    }
+
+    /// Set `skip_threshold`.
+    pub fn with_skip_threshold(mut self, skip_threshold: f32) -> Self {
+        self.skip_threshold = skip_threshold;
+        self
+    }
+
+    /// Set `lloyd_max_iter`.
+    pub fn with_lloyd_max_iter(mut self, lloyd_max_iter: u8) -> Self {
+        self.lloyd_max_iter = lloyd_max_iter;
+        self
+    }
+
+    /// Set `lloyd_eps`.
+    pub fn with_lloyd_eps(mut self, lloyd_eps: u32) -> Self {
+        self.lloyd_eps = lloyd_eps;
+        self
+    }
+
+    /// Set `stale_slot_threshold`.
+    pub fn with_stale_slot_threshold(mut self, stale_slot_threshold: Option<u8>) -> Self {
+        self.stale_slot_threshold = stale_slot_threshold;
+        self
+    }
+
+    /// Set `rdo_lambda`.
+    pub fn with_rdo_lambda(mut self, rdo_lambda: Option<f32>) -> Self {
+        self.rdo_lambda = rdo_lambda;
+        self
+    }
+
+    /// Set `lbg_max_passes`.
+    pub fn with_lbg_max_passes(mut self, lbg_max_passes: u8) -> Self {
+        self.lbg_max_passes = lbg_max_passes;
+        self
+    }
+
+    /// Set `luma_weight`.
+    pub fn with_luma_weight(mut self, luma_weight: u8) -> Self {
+        self.luma_weight = luma_weight;
+        self
+    }
+
+    /// Set `pcl_max_iter`.
+    pub fn with_pcl_max_iter(mut self, pcl_max_iter: u8) -> Self {
+        self.pcl_max_iter = pcl_max_iter;
+        self
+    }
+
+    /// Set `kmeans_pp_init`.
+    pub fn with_kmeans_pp_init(mut self, kmeans_pp_init: bool) -> Self {
+        self.kmeans_pp_init = kmeans_pp_init;
+        self
+    }
+
+    /// Set `kmeans_pp_lloyd_iter`.
+    pub fn with_kmeans_pp_lloyd_iter(mut self, kmeans_pp_lloyd_iter: u8) -> Self {
+        self.kmeans_pp_lloyd_iter = kmeans_pp_lloyd_iter;
+        self
+    }
+
+    /// Set `vintage_compat`.
+    pub fn with_vintage_compat(mut self, vintage_compat: bool) -> Self {
+        self.vintage_compat = vintage_compat;
+        self
+    }
 }
 
 impl Default for EncoderOptions {
@@ -1440,6 +1527,7 @@ pub struct CinepakEncoder {
 /// flag (e.g. AVI `AVIF_KEYFRAME` / QuickTime sync sample / Sega FILM
 /// `sample_info_1`) without re-decoding the first byte.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct EncodedFrame {
     /// The conformant Cinepak frame bytes (10-byte frame header + strips).
     /// Identical to the return value of [`CinepakEncoder::encode_intra`] /
@@ -1462,6 +1550,7 @@ pub struct EncodedFrame {
 /// across all of the frame's strips (so a 4-strip frame can produce up
 /// to 4 reclamations per codebook flavour).
 #[derive(Clone, Copy, Debug, Default)]
+#[non_exhaustive]
 pub struct FrameStats {
     /// Number of V4 codebook slots reclaimed via round-7 empty-cluster
     /// recovery during the most recent frame. Zero on intra frames or
@@ -1482,6 +1571,7 @@ pub struct FrameStats {
 /// call. `None` (via the accessor) when the encoder is not in
 /// target-bitrate mode.
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct RateStats {
     /// The per-frame **base** byte budget in effect for the most recent frame
     /// (`bits_per_second / 8 / fps`, or the directly-set byte budget). This
@@ -1872,11 +1962,7 @@ impl CinepakEncoder {
     /// Otherwise the number of inter frames that have been emitted since
     /// the most recent keyframe.
     pub fn gop_position(&self) -> u32 {
-        if self.force_keyframe {
-            0
-        } else {
-            self.gop_pos
-        }
+        if self.force_keyframe { 0 } else { self.gop_pos }
     }
 
     /// Round 143: request a one-shot keyframe on the next
@@ -1993,7 +2079,7 @@ impl CinepakEncoder {
         };
         let intra = self.force_keyframe
             || self.gop_pos == 0
-            || (interval > 0 && self.gop_pos % interval == 0)
+            || (interval > 0 && self.gop_pos.is_multiple_of(interval))
             || self.prev_frame.is_none()
             || mode_mismatch;
 
@@ -2808,6 +2894,7 @@ pub struct TwoPassRateControl {
 
 /// Per-frame outcome from [`TwoPassRateControl::encode_at_target_bytes`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct RateControlledFrame {
     /// The encoded bitstream.
     pub bytes: Vec<u8>,
@@ -4642,7 +4729,7 @@ fn assemble_frame(width: u32, height: u32, strips: &[Vec<u8>], flags: u8) -> Res
 // ---------------------------------------------------------------------------
 
 fn validate_dims(width: u32, height: u32) -> Result<()> {
-    if width == 0 || height == 0 || width % 4 != 0 || height % 4 != 0 {
+    if width == 0 || height == 0 || !width.is_multiple_of(4) || !height.is_multiple_of(4) {
         return Err(CinepakError::other(format!(
             "encoder: dims must be > 0 and multiples of 4; got {width}x{height}"
         )));
@@ -4919,11 +5006,7 @@ fn mb_mse_against_prev(
             }
         }
     }
-    if n > 0.0 {
-        sum_sq / n
-    } else {
-        0.0
-    }
+    if n > 0.0 { sum_sq / n } else { 0.0 }
 }
 
 // ---------------------------------------------------------------------------

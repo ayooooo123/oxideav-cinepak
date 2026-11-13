@@ -36,7 +36,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use oxideav_cinepak::{
-    encode_gray8, encode_rgb24, encode_rgb24_inter, CinepakDecoder, EncoderOptions,
+    CinepakDecoder, EncoderOptions, encode_gray8, encode_rgb24, encode_rgb24_inter,
 };
 
 const MAX_INPUT_BYTES: usize = 16 * 1024;
@@ -75,13 +75,11 @@ fuzz_target!(|data: &[u8]| {
     let opts = if sel & 1 == 0 {
         EncoderOptions::from_quality(quality)
     } else {
-        EncoderOptions {
-            v4_entries: ((quality as u16) % 256) + 1,
-            v1_entries: ((data[1] as u16) % 256) + 1,
-            strip_count: strip_seed as u16,
-            skip_threshold: (data[1] as f32) / 4.0,
-            ..EncoderOptions::default()
-        }
+        EncoderOptions::default()
+            .with_v4_entries(((quality as u16) % 256) + 1)
+            .with_v1_entries(((data[1] as u16) % 256) + 1)
+            .with_strip_count(strip_seed as u16)
+            .with_skip_threshold((data[1] as f32) / 4.0)
     };
 
     // RGB24 path (3 bytes/pixel).

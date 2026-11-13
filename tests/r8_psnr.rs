@@ -55,14 +55,14 @@
 #![allow(clippy::needless_range_loop)]
 
 use oxideav_cinepak::{
-    encode_rgb24_per_strip_rd, encode_rgb24_round7, encode_rgb24_round8, CinepakDecoder,
-    EncoderOptions,
+    CinepakDecoder, EncoderOptions, encode_rgb24_per_strip_rd, encode_rgb24_round7,
+    encode_rgb24_round8,
 };
 
 /// BT.601 Y-channel mean PSNR between two RGB24 buffers.
 fn psnr_y(a: &[u8], b: &[u8]) -> f64 {
     assert_eq!(a.len(), b.len());
-    assert!(a.len() % 3 == 0);
+    assert!(a.len().is_multiple_of(3));
     let n = a.len() / 3;
     let mut sum_sq = 0.0f64;
     for i in 0..n {
@@ -305,10 +305,7 @@ fn round8_saves_wire_on_split_256x256() {
 #[test]
 fn round8_matches_round7_on_homogeneous_pure_distortion() {
     let rgb = synth_64x64();
-    let opts_none = EncoderOptions {
-        rdo_lambda: None,
-        ..EncoderOptions::from_quality(50)
-    };
+    let opts_none = EncoderOptions::from_quality(50).with_rdo_lambda(None);
     let r7 = encode_rgb24_round7(&rgb, 64, 64, opts_none).expect("r7");
     let r8 = encode_rgb24_round8(&rgb, 64, 64, opts_none).expect("r8");
     let psnr7 = psnr_y(&rgb, &decode_to_packed(&r7, 64, 64));

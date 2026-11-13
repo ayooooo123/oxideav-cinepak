@@ -25,7 +25,7 @@
 
 #![allow(clippy::needless_range_loop)]
 
-use oxideav_cinepak::{encode_rgb24, encode_rgb24_best_strips, CinepakDecoder, EncoderOptions};
+use oxideav_cinepak::{CinepakDecoder, EncoderOptions, encode_rgb24, encode_rgb24_best_strips};
 
 /// Synthesise a 320×240 smooth RGB24 gradient (the standard PSNR
 /// fixture from `tests/ffmpeg_psnr.rs`).
@@ -72,7 +72,7 @@ fn synth_64x64() -> Vec<u8> {
 /// `f64::INFINITY` on bit-identical Y.
 fn psnr_y(a: &[u8], b: &[u8]) -> f64 {
     assert_eq!(a.len(), b.len());
-    assert!(a.len() % 3 == 0);
+    assert!(a.len().is_multiple_of(3));
     let n = a.len() / 3;
     let mut sum_sq = 0.0f64;
     for i in 0..n {
@@ -122,24 +122,8 @@ fn lever_d_rdo_lifts_psnr_y_320x240() {
     let h = 240u32;
     let base = EncoderOptions::from_quality(50);
 
-    let (bytes_legacy, psnr_legacy) = encode_decode_measure(
-        &rgb,
-        w,
-        h,
-        EncoderOptions {
-            rdo_lambda: None,
-            ..base
-        },
-    );
-    let (bytes_rdo, psnr_rdo) = encode_decode_measure(
-        &rgb,
-        w,
-        h,
-        EncoderOptions {
-            rdo_lambda: Some(5.0),
-            ..base
-        },
-    );
+    let (bytes_legacy, psnr_legacy) = encode_decode_measure(&rgb, w, h, base.with_rdo_lambda(None));
+    let (bytes_rdo, psnr_rdo) = encode_decode_measure(&rgb, w, h, base.with_rdo_lambda(Some(5.0)));
 
     let delta = psnr_rdo - psnr_legacy;
     eprintln!(
@@ -173,24 +157,8 @@ fn lever_d_rdo_lifts_psnr_y_64x64() {
     let h = 64u32;
     let base = EncoderOptions::from_quality(50);
 
-    let (bytes_legacy, psnr_legacy) = encode_decode_measure(
-        &rgb,
-        w,
-        h,
-        EncoderOptions {
-            rdo_lambda: None,
-            ..base
-        },
-    );
-    let (bytes_rdo, psnr_rdo) = encode_decode_measure(
-        &rgb,
-        w,
-        h,
-        EncoderOptions {
-            rdo_lambda: Some(5.0),
-            ..base
-        },
-    );
+    let (bytes_legacy, psnr_legacy) = encode_decode_measure(&rgb, w, h, base.with_rdo_lambda(None));
+    let (bytes_rdo, psnr_rdo) = encode_decode_measure(&rgb, w, h, base.with_rdo_lambda(Some(5.0)));
 
     let delta = psnr_rdo - psnr_legacy;
     eprintln!(
@@ -270,10 +238,7 @@ fn legacy_rdo_none_remains_decodable_and_at_baseline_psnr() {
     let rgb = synth_320x240();
     let w = 320u32;
     let h = 240u32;
-    let opts = EncoderOptions {
-        rdo_lambda: None,
-        ..EncoderOptions::from_quality(50)
-    };
+    let opts = EncoderOptions::from_quality(50).with_rdo_lambda(None);
     let (bytes, psnr) = encode_decode_measure(&rgb, w, h, opts);
     eprintln!(
         "legacy rdo=None 320x240 q=50: psnr_y = {:.3} dB, {} B",

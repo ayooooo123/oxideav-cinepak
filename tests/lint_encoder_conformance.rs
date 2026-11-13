@@ -11,12 +11,12 @@
 //! for a downstream decoder to notice.
 
 use oxideav_cinepak::encoder::{
-    encode_gray8, encode_gray8_best_rd_grid, encode_gray8_inter, encode_gray8_round7, encode_rgb24,
-    encode_rgb24_best_rd_grid, encode_rgb24_best_rd_grid_3axis, encode_rgb24_best_strips,
-    encode_rgb24_inter, encode_rgb24_per_strip_rd, encode_rgb24_round6, encode_rgb24_round7,
-    encode_rgb24_round8, CinepakEncoder, EncoderOptions,
+    CinepakEncoder, EncoderOptions, encode_gray8, encode_gray8_best_rd_grid, encode_gray8_inter,
+    encode_gray8_round7, encode_rgb24, encode_rgb24_best_rd_grid, encode_rgb24_best_rd_grid_3axis,
+    encode_rgb24_best_strips, encode_rgb24_inter, encode_rgb24_per_strip_rd, encode_rgb24_round6,
+    encode_rgb24_round7, encode_rgb24_round8,
 };
-use oxideav_cinepak::{lint_frame, lint_frame_with, lint_sequence, CinepakDecoder, LintOptions};
+use oxideav_cinepak::{CinepakDecoder, LintOptions, lint_frame, lint_frame_with, lint_sequence};
 
 const W: u32 = 32;
 const H: u32 = 16;
@@ -126,10 +126,7 @@ fn stateless_inter_entry_points_lint_clean() {
 
 #[test]
 fn stateful_encoder_multi_strip_gop_lints_clean_as_sequence() {
-    let opts = EncoderOptions {
-        strip_count: 2,
-        ..EncoderOptions::default()
-    };
+    let opts = EncoderOptions::default().with_strip_count(2);
     let mut enc = CinepakEncoder::new().with_keyframe_interval(3);
     let mut frames = Vec::new();
     for n in 0..6u32 {
@@ -174,11 +171,9 @@ fn rate_controlled_encoder_lints_clean() {
 
 #[test]
 fn vintage_compat_encoder_passes_vintage_profile_over_a_gop() {
-    let opts = EncoderOptions {
-        vintage_compat: true,
-        strip_count: 3,
-        ..EncoderOptions::default()
-    };
+    let opts = EncoderOptions::default()
+        .with_vintage_compat(true)
+        .with_strip_count(3);
     let vintage = LintOptions::new().with_vintage(true);
     let mut enc = CinepakEncoder::new().with_keyframe_interval(2);
     for n in 0..4u32 {

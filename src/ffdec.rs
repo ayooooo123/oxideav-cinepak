@@ -313,7 +313,7 @@ impl FfCinepak {
                 return Err(FfError::Unsupported("cinepak: encoded_buf_size 0"));
             }
             self.sega_film_skip_bytes = Some(
-                if encoded_buf_size != data.len() && data.len() % encoded_buf_size != 0 {
+                if encoded_buf_size != data.len() && !data.len().is_multiple_of(encoded_buf_size) {
                     if data.len() >= 16 && data[10..16] == [0xFE, 0x00, 0x00, 0x06, 0x00, 0x00] {
                         6
                     } else {

@@ -52,8 +52,8 @@
 #![allow(clippy::needless_range_loop)]
 
 use oxideav_cinepak::{
-    encode_rgb24_best_rd_grid_3axis, encode_rgb24_round6, encode_rgb24_round7, CinepakDecoder,
-    EncoderOptions,
+    CinepakDecoder, EncoderOptions, encode_rgb24_best_rd_grid_3axis, encode_rgb24_round6,
+    encode_rgb24_round7,
 };
 
 fn synth_64x64() -> Vec<u8> {
@@ -89,7 +89,7 @@ fn synth_noisy_64x64() -> Vec<u8> {
 /// BT.601 Y-channel mean PSNR between two RGB24 buffers.
 fn psnr_y(a: &[u8], b: &[u8]) -> f64 {
     assert_eq!(a.len(), b.len());
-    assert!(a.len() % 3 == 0);
+    assert!(a.len().is_multiple_of(3));
     let n = a.len() / 3;
     let mut sum_sq = 0.0f64;
     for i in 0..n {
@@ -192,10 +192,7 @@ fn lever_j_3axis_picker_picks_better_luma_weight() {
     // Lever J's contribution against the round-6 cold-start baseline.
     // k-means++ initialisation makes the lw=2 starting point much
     // stronger and shrinks Lever J's incremental gain.
-    let opts = EncoderOptions {
-        kmeans_pp_init: false,
-        ..EncoderOptions::from_quality(50)
-    };
+    let opts = EncoderOptions::from_quality(50).with_kmeans_pp_init(false);
 
     // Restrict to lw=[2] (= round-6 frozen choice). Should match r6
     // (modulo Y-scoring instead of RGB-scoring; on this fixture they
@@ -338,10 +335,7 @@ fn round7_respects_opts_luma_weight_in_candidates() {
     let rgb = synth_64x64();
     let w = 64u32;
     let h = 64u32;
-    let opts = EncoderOptions {
-        luma_weight: 1,
-        ..EncoderOptions::from_quality(50)
-    };
+    let opts = EncoderOptions::from_quality(50).with_luma_weight(1);
     let bytes = encode_rgb24_round7(&rgb, w, h, opts).unwrap();
     let psnr = psnr_y(&rgb, &decode_packed(&bytes, w, h));
     eprintln!(
